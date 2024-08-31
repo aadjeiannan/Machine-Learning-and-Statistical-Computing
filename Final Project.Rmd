@@ -1,0 +1,539 @@
+---
+title: "Final Project"
+author: " George Baffour Awuah & Nii Adjetey Adjei-Annan"
+date: "2024-04-25"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+#Getting Saani Data Loaded
+```{r}
+
+setwd("/Users/georgebaffourawuah/Desktop/SPRING 2024/COMPUTING/") # set working directory
+
+# Load necessary libraries
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+
+# Load the data and immediately remove rows with missing values
+data = na.omit(read.csv("Sani_Data.csv"))
+names(data)
+
+# View the first few rows of the dataset
+head(data)
+```
+
+# Selecting  variables of interest
+```{r}
+# Compute the correlation matrix
+cor_matrix <- cor(data %>% select_if(is.numeric), use = "complete.obs")
+# Visualize the correlation matrix
+corrplot(cor_matrix, method = "circle")
+
+```
+
+
+```{r}
+# Convert data to numeric type where possible, including character columns
+data_numeric <- data.frame(lapply(data, function(x) {
+  if (is.character(x)) {
+    # Try to convert character to numeric, NA introduced for non-convertible values
+    as.numeric(as.character(x))
+  } else if (is.factor(x)) {
+    # Convert factors to numeric, assuming factor levels are numeric
+    as.numeric(as.character(x))
+  } else {
+    # Leave other types unchanged
+    x
+  }
+}))
+
+# Remove columns that couldn't be converted to numeric (still contain NAs)
+data_numeric <- data_numeric[, sapply(data_numeric, function(x) !any(is.na(x)))]
+
+# Compute the correlation matrix for numeric variables
+cor_matrix <- cor(data_numeric, use = "complete.obs")
+
+# Visualize the correlation matrix to inspect correlations
+library(corrplot)
+corrplot(cor_matrix, method = "circle")
+
+
+```
+
+#converting cath into 
+```{r}
+# Convert 'Cath' from categorical to numeric
+data$Cath <- ifelse(data$Cath == "Normal", 0, 1)
+
+# Calculate the correlation matrix
+cor_matrix <- cor(data[, sapply(data, is.numeric)], use = "complete.obs")
+
+# Extract the correlations of all variables with 'Cath'
+cor_with_cath <- cor_matrix["Cath",]
+
+# Display the sorted correlation values
+sort(cor_with_cath, decreasing = TRUE)
+
+```
+```{r}
+print(colnames(data))
+# Extract the correlations of all variables with 'Cath'
+cor_with_cath <- cor_matrix["Cath",]
+
+# Sort the correlation values in decreasing order
+sorted_cor <- sort(cor_with_cath, decreasing = TRUE)
+
+# Plot the correlations from highest to lowest
+barplot(sorted_cor, main = "Correlation with 'Cath'", xlab = "Variables", ylab = "Correlation")
+
+
+```
+#selecting variables
+```{r}
+# Correcting selected_variables based on actual column names found in the dataframe
+selected_variables <- c("Typical.Chest.Pain", "Age", "Region.RWMA", "HTN", "DM", "BP", "Tinversion", "FBS", "K", "EF.TTE")  
+
+# Directly subset the data without checking for column existence
+model_data <- data[c("Cath", selected_variables)]
+
+# Check if model_data is created successfully
+str(model_data)
+
+# Calculate summary statistics
+summary_stats <- summary(model_data)
+
+# Extract minimum and maximum values for each variable
+min_values <- sapply(model_data, min)
+max_values <- sapply(model_data, max)
+
+# Combine min and max values into a data frame
+min_max_values <- data.frame(Minimum = min_values, Maximum = max_values)
+
+# Print the min and max values for each variable
+print(min_max_values)
+
+```
+
+#Data visualization
+```{r}
+library(ggplot2)
+
+# Plot Cath  vs Age using a box plot
+ggplot(model_data, aes(x = Age, y = factor(Cath), fill = factor(Cath))) +
+  geom_boxplot() +
+  labs(title = "Distribution of CAD Status by Age", x = "Age", y = "CAD Status", fill = "CAD Status")
+
+# Plot Cath  vs BP using a box plot
+ggplot(model_data, aes(x = BP, y = factor(Cath), fill = factor(Cath))) +
+  geom_boxplot() +
+  labs(title = "Distribution of CAD Status by Blood Pressure", x = "BP", y = "CAD Status", fill = "CAD Status")
+
+# CAD vs Typical Chest Pain using clustered bar chart
+ggplot(model_data, aes(x = factor(Cath), fill = factor(Typical.Chest.Pain))) +
+  geom_bar(position = "dodge") +
+  labs(title = "CAD vs Typical Chest Pain", x = "CAD Status", fill = "Typical.Chest.Pain")
+
+# CAD vs Hypertension using  clustered bar chart
+ggplot(model_data, aes(x = factor(Cath), fill = factor(HTN))) +
+  geom_bar(position = "dodge") +
+  labs(title = "CAD vs Hypertension", x = "CAD Status", fill = "HTN")
+```
+
+##Correlation analysis
+```{r}
+# Compute correlation matrix for the selected variables
+correlations <- cor(model_data[, sapply(model_data, is.numeric)], use = "complete.obs")
+
+# Visualize the correlation matrix
+library(corrplot)
+corrplot(correlations, method = "circle")
+
+```
+```{r}
+dim(model_data)
+```
+
+#spliting the model_data
+```{r}
+# Spliting the data into training and testing sets
+set.seed(123)  
+train=sample(1:303, 0.7*303) # 70% of total data
+train_data= model_data[train, ]
+test_data=model_data[-train, ]
+dim(train_data)
+dim(test_data)
+```
+
+#logistic regression
+
+```{r}
+# Fit the model on the training data
+train_model <- glm(Cath ~ ., data = train_data, family = "binomial")
+
+result=predict(train_model, test_data, type="response")
+predict.response=ifelse(result>0.5,1,0)
+true.response=test_data$Cath
+```
+
+#Assessing model performance
+```{r}
+# Calculate the confusion matrix
+conf_matrixlr <- table(true.response, predict.response)
+
+# Function to calculate accuracy
+accuracy <- function(conf_matrixlr) {
+  sum(diag(conf_matrixlr)) / sum(conf_matrixlr)
+}
+
+# Function to calculate recall
+recall <- function(conf_matrixlr) {
+  true_positives <- conf_matrixlr[1, 1]
+  false_negatives <- conf_matrixlr[2, 1]
+  true_positives / (true_positives + false_negatives)
+}
+
+# Function to calculate precision
+precision <- function(conf_matrixlr) {
+  true_positives <- conf_matrixlr[1, 1]
+  false_positives <- conf_matrixlr[1, 2]
+  true_positives / (true_positives + false_positives)
+}
+
+# Function to calculate F1 score
+f1_score <- function(conf_matrixlr) {
+  prec <- precision(conf_matrixlr)
+  rec <- recall(conf_matrixlr)
+  2 * (prec * rec) / (prec + rec)
+}
+
+# Calculate and print accuracy, recall, and F1 score
+cat("Accuracy:", accuracy(conf_matrixlr), "\n")
+cat("Recall:", recall(conf_matrixlr), "\n")
+cat("F1 Score:", f1_score(conf_matrixlr), "\n")
+
+
+```
+```{r}
+# Calculate AUC
+roc_obj <- roc(true.response, predict.response)
+auc_value <- auc(roc_obj)
+
+
+
+# Print AUC
+print(paste("AUC:", auc_value))
+
+# Calculate mean of selected performance metrics
+mean_metrics <- mean(c(recall,auc_value, f1_score))
+
+# Print mean of the metrics
+print(paste("Mean of Metrics:", mean_metrics))
+```
+
+
+```{r}
+# Calculate AUC
+roc_objlr <- roc(true.response, predict.response)
+auc_valuelr <- auc(roc_objlr)
+
+# Print AUC
+print(paste("AUC:", auc_valuelr))
+
+# Calculate mean of selected performance metrics
+mean_metrics <- mean(c(recall,auc_value, f1_score))
+
+# Print mean of the metrics
+print(paste("Mean of Metrics:", mean_metrics))
+
+```
+
+
+```{r}
+
+# Calculate the ROC object from the actual outcomes and the predicted probabilities
+roc_objlr <- roc(true.response, predict.response)
+
+# Plot the ROC curve
+plot(roc_objlr, main="ROC Curve", col="#1c61b6", lwd=2)
+# Add AUC to the plot
+auc(roc_objlr, print.auc=TRUE, print.auc.x=0.5, print.auc.y=0.4)
+
+```
+
+
+```{r}
+# Enhanced ROC plot with custom settings
+plot(roc_objlr, main="ROC Curve", col="#1c61b6", lwd=2, print.thres=TRUE)
+abline(a=0, b=1, lty=2, col="red")  # Add a diagonal dashed line for reference
+auc(roc_obj, print.auc=TRUE, print.auc.x=0.5, print.auc.y=0.4)  # Print AUC on the plot
+
+```
+
+
+#####KNN
+```{r}
+names(train_data)
+```
+
+#Loading our packages of interest
+```{r}
+## Extract predictors only/Remove response variable
+x.train=train_data[, -1]
+x.test=test_data[, -1]
+dim(x.train)
+dim(x.test)
+
+```
+
+```{r}
+## Response 
+true_Y=test_data$Cath
+train_Y=train_data$Cath
+length(true_Y)
+length(train_Y)
+
+## KNN Classifier confusion matrix
+library(class)
+knn.predict=knn(x.train, x.test,train_Y, k=10)
+conf_matrixknn=table(true_Y, knn.predict)
+
+```
+#Assessing model performance
+```{r}
+# Extract metrics
+accuracy <- sum(diag(conf_matrixknn)) / sum(conf_matrixknn)
+recall <- sensitivity(conf_matrixknn)
+precision <- posPredValue(conf_matrixknn)
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Recall (Sensitivity):", recall))
+print(paste("Precision:", precision))
+print(paste("F1 Score:", f1_score))
+
+# Calculate AUC
+roc_objknn <- roc(test_data$Cath, predictions)
+auc_valueknn <- auc(roc_objknn)
+
+# Print AUC
+print(paste("AUC:", auc_valueknn))
+
+```
+```{r}
+# Calculate mean of selected performance metrics
+mean_metrics <- mean(c(recall,auc_value, f1_score))
+
+# Print mean of the metrics
+print(paste("Mean of Metrics:", mean_metrics))
+
+```
+
+
+```{r}
+
+# Calculate the ROC object from the actual outcomes and the predicted probabilities
+roc_objknn <- roc(test_data$Cath, predictions)
+
+# Plot the ROC curve
+plot(roc_objknn, main="ROC Curve", col="#1c61b6", lwd=2)
+# Add AUC to the plot
+auc(roc_objknn, print.auc=TRUE, print.auc.x=0.5, print.auc.y=0.4)
+
+```
+####Naive Bayes
+```{r}
+
+library(e1071)
+nb_model <- naiveBayes(Cath ~ ., data = train_data)
+Bayes_model=naiveBayes(Cath ~., data=train_data)
+pred_Bayes=predict(Bayes_model, newdata=test_data)
+True.response=test_data$Cath
+conf_matrixbayes=table(True.response, pred_Bayes)
+```
+
+```{r}
+accuracy <- sum(diag(conf_matrixbayes)) / sum(conf_matrixbayes)
+recall <- sensitivity(conf_matrixbayes)
+precision <- posPredValue(conf_matrixbayes)
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Recall (Sensitivity):", recall))
+print(paste("Precision:", precision))
+print(paste("F1 Score:", f1_score))
+
+# Calculate the mean of the performance metrics excluding AUC
+mean_metrics <- mean(c(auc_value, recall, f1_score))
+print(paste("Mean of Metrics (excluding Accuracy ):", mean_metrics))
+```
+#AUC
+```{r}
+library(pROC)
+
+# Get probability predictions
+nb_prob_predictions <- predict(Bayes_model, test_data, type = "raw")
+
+# Calculate ROC and AUC
+roc_objbayes <- roc(test_data$Cath, nb_prob_predictions[,2])  # Assuming the positive class is the second column
+auc_valuebayes <- auc(roc_objbayes)
+
+# Plot ROC curve
+plot(roc_objbayes, main="ROC Curve for Naive Bayes")
+print(paste("AUC:", auc_valuebayes))
+
+```
+
+####Support Vector Machine
+
+#SVM Train data
+```{r}
+library(e1071)
+library(ROCR)
+svm_model <- svm(Cath ~ ., data = train_data, kernel = "linear", type = "C-classification", cost = 5)
+summary(svm_model)
+
+```
+
+#Model validation
+```{r}
+# Assuming svm_model is already trained and test_data is prepared
+predictionssvm <- predict(svm_model, test_data)
+
+# Create a confusion matrix
+conf_matrixsvm <- table(Predictions = predictionssvm, Actual = test_data$Cath)
+
+```
+
+
+```{r}
+accuracy <- sum(diag(conf_matrixsvm)) / sum(conf_matrixsvm)
+recall <- sensitivity(conf_matrixsvm)
+precision <- posPredValue(conf_matrixsvm)
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Recall (Sensitivity):", recall))
+print(paste("Precision:", precision))
+print(paste("F1 Score:", f1_score))
+
+# Calculate the mean of the performance metrics excluding AUC
+mean_metrics <- mean(c(auc_value, recall, f1_score))
+print(paste("Mean of Metrics (excluding Accuracy ):", mean_metrics))
+```
+
+
+
+# Visualizing AUC
+
+```{r}
+
+# Load required packages
+library(pROC)
+
+# Fit SVM model to include decision values for AUC calculation
+svm_model_dv <- svm(Cath ~ ., data = train_data, kernel = "linear", type = "C-classification", cost = 5, decision.values = TRUE)
+
+# Calculate AUC using pROC
+roc_curvesvm <- roc(test_data$Cath, decision_values)
+
+# Plot ROC curve
+plot(roc_curvesvm, main = "ROC Curve", col = "blue", lwd = 2)
+abline(a = 0, b = 1, col = "red")
+legend("bottomright", legend = paste("AUC =", round(auc(roc_curvesvm), 2)), col = "blue", lwd = 1)
+
+```
+
+
+
+#Random Forest
+
+```{r}
+
+# Check the unique values of Cath
+unique_levels <- unique(model_data$Cath)
+
+# Ensure that Cath has more than two unique values
+if (length(unique_levels) <= 1) {
+  stop("The response variable has only one unique value. Please check your data.")
+} else {
+  # Convert Cath to a factor variable
+  model_data$Cath <- factor(model_data$Cath)
+  
+  # Train the Random Forest model
+  library(randomForest)
+  rf_model <- randomForest(Cath ~ ., data = train_data, ntree = 100)
+  
+  # Make predictions on the testing data
+  rf_predictions <- predict(rf_model, test_data)
+  }
+
+```
+
+
+```{r}
+# Make predictions on the testing data
+rf_predictions <- predict(rf_model, test_data)
+
+# Create confusion matrix
+conf_matrix_rf <- table(rf_predictions, test_data$Cath)
+print(conf_matrix_rf)
+
+# Calculate accuracy
+accuracy_rf <- sum(diag(conf_matrix_rf)) / sum(conf_matrix_rf)
+print(paste("Accuracy:", accuracy_rf))
+
+```
+
+```{r}
+# Extract metrics
+accuracy <- sum(diag(conf_matrix_rf)) / sum(conf_matrix_rf)
+recall <- sensitivity(conf_matrix_rf)
+precision <- posPredValue(conf_matrix_rf)
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Recall (Sensitivity):", recall))
+print(paste("Precision:", precision))
+print(paste("F1 Score:", f1_score))
+
+# Calculate mean of AUC, recall, and F1 score
+mean_metrics_rf <- mean(c(auc_rf, recall_rf, f1_score_rf))
+print(paste("Mean of AUC, Recall, F1 Score:", mean_metrics_rf))
+```
+
+```{r}
+
+# Plot the ROC curve
+plot(roc_rf, main = "ROC Curve for Random Forest", col = "blue", lwd = 2)
+legend("bottomright", legend = paste("AUC =", round(auc_rf, 2)), col = "blue", lty = 1, cex = 0.8)
+abline(a = 0, b = 1, lty = 2, col = "red")
+
+```
+
+
+## All ROC curves
+```{r}
+plot(roc_objlr, main="ROC Curves", col="#1c61b6", lwd=2)
+lines(roc_objknn, col = "#FF5733", lwd = 2)  # KNN
+lines(roc_objbayes, col = "#FFC300", lwd = 2)  # Naive Bayes
+lines(roc_curvesvm, col = "#900C3F", lwd = 2)  # SVM
+lines(roc_rf, col = "#00FF00", lwd = 2)  # Random Forest
+legend("bottomright", 
+       legend = c("Logistic Regression", "KNN", "Naive Bayes", "SVM", "Random Forest"),
+       col = c("#1c61b6", "#FF5733", "#FFC300", "#900C3F", "#00FF00"),
+       lwd = 2)
+abline(a = 0, b = 1, col = "black", lty = 2)
+
+
+
+```
+
